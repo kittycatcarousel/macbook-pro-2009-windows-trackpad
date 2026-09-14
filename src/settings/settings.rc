@@ -1,0 +1,26 @@
+#include <windows.h>
+#include "resource.h"
+IDD_SETTINGS DIALOGEX 0, 0, 356, 250
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Trackpad Settings"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    LTEXT "Tap drag", -1, 12, 10, 310, 12
+    LTEXT "Apply changes the settings immediately and saves them.", -1, 12, 26, 332, 20
+    LTEXT "Maximum tap time", -1, 12, 54, 184, 10
+    EDITTEXT IDC_TAP, 202, 51, 84, 14, ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT "ms", -1, 294, 54, 36, 10
+    LTEXT "A touch must be shorter than this time to count as a tap. Zero disables tap clicks.", -1, 12, 71, 332, 18
+    LTEXT "Time before the second touch", -1, 12, 98, 184, 10
+    EDITTEXT IDC_GAP, 202, 95, 84, 14, ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT "ms", -1, 294, 98, 36, 10
+    LTEXT "Start the second touch within this time after the first tap. Zero disables tap drag recognition.", -1, 12, 115, 332, 20
+    LTEXT "Minimum finger movement for dragging", -1, 12, 144, 184, 10
+    EDITTEXT IDC_MOTION, 202, 141, 84, 14, ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT "counts", -1, 294, 144, 42, 10
+    LTEXT "Zero removes the movement threshold. Small values can cause double-clicks. Movement uses trackpad device counts.", -1, 12, 161, 332, 25
+    LTEXT "", IDC_STATUS, 12, 191, 332, 28
+    PUSHBUTTON "Default values", IDC_RESTORE, 12, 224, 126, 16
+    DEFPUSHBUTTON "Apply", IDC_APPLY, 224, 224, 56, 16
+    PUSHBUTTON "Close", IDCANCEL, 288, 224, 56, 16
+END

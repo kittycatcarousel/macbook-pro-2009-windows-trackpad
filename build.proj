@@ -1,0 +1,40 @@
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- SPDX-License-Identifier: MIT -->
+  <Import Project="Directory.Build.props" />
+  <PropertyGroup>
+    <Root>$(MSBuildThisFileDirectory)</Root>
+    <DriverInput Condition="'$(DriverPath)' != ''">$([MSBuild]::NormalizePath('$(MSBuildStartupDirectory)', '$(DriverPath)'))</DriverInput>
+    <DriverImage>$(Root)build\driver\applemtp-runtime.sys</DriverImage>
+    <RuntimeObject>$(Root)build\obj\runtime\runtime.obj</RuntimeObject>
+    <PatchHeader>$(Root)build\generated\patch-data.h</PatchHeader>
+    <PatchBuilder>$(Root)build\tools\build-patch.exe</PatchBuilder>
+  </PropertyGroup>
+  <ItemGroup>
+    <BuildProjects Include="tools\build-patch.vcxproj;src\driver\runtime.vcxproj" />
+    <Programs Include="src\settings\settings.vcxproj;src\patcher\patcher.vcxproj" />
+  </ItemGroup>
+  <Target Name="CheckInput">
+    <Error Condition="'$(DriverInput)' == '' or !Exists('$(DriverInput)')" Text="Set /p:DriverPath to the original AppleMTP.sys file." />
+    <Error Condition="'$(DriverInput)' == '$(DriverImage)' or '$(DriverInput)' == '$(PatchHeader)' or '$(DriverInput)' == '$(RuntimeObject)'" Text="Use different files for the original driver and build output." />
+    <Message Importance="High" Text="Toolset: $(PlatformToolset)." />
+    <Message Condition="'$(TargetUniversalCRTVersion)' != ''" Importance="High" Text="C runtime SDK: $(TargetUniversalCRTVersion)." />
+  </Target>
+  <Target Name="BuildTools" DependsOnTargets="CheckInput">
+    <MSBuild Projects="@(BuildProjects)" Targets="Build" />
+  </Target>
+  <Target Name="GeneratePatch" DependsOnTargets="BuildTools"
+          Inputs="$(DriverInput);$(RuntimeObject);$(PatchBuilder);$(MSBuildProjectFullPath)"
+          Outputs="$(DriverImage);$(PatchHeader)">
+    <MakeDir Directories="$(Root)build\driver;$(Root)build\generated" />
+    <Delete Files="$(DriverImage);$(PatchHeader)" />
+    <Exec Command="&quot;$(PatchBuilder)&quot; &quot;$(DriverInput)&quot; &quot;$(RuntimeObject)&quot; &quot;$(DriverImage)&quot; &quot;$(PatchHeader)&quot;" />
+  </Target>
+  <Target Name="Build" DependsOnTargets="GeneratePatch">
+    <MSBuild Projects="@(Programs)" Targets="Build" />
+  </Target>
+  <Target Name="Clean">
+    <MSBuild Projects="@(Programs);@(BuildProjects)" Targets="Clean" />
+    <Delete Files="$(DriverImage);$(PatchHeader)" />
+  </Target>
+  <Target Name="Rebuild" DependsOnTargets="CheckInput;Clean;Build" />
+</Project>

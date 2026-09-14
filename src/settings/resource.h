@@ -1,0 +1,7 @@
+#define IDD_SETTINGS 100
+#define IDC_TAP 101
+#define IDC_GAP 102
+#define IDC_MOTION 103
+#define IDC_APPLY 104
+#define IDC_RESTORE 105
+#define IDC_STATUS 106

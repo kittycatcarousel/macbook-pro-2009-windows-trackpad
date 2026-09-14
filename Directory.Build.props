@@ -1,0 +1,10 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- SPDX-License-Identifier: MIT -->
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <Platform Condition="'$(Platform)' == ''">Win32</Platform>
+    <PlatformToolset Condition="'$(PlatformToolset)' == ''">v141_xp</PlatformToolset>
+    <!-- Use the selected developer environment. Otherwise, keep the XP toolset default. -->
+    <TargetUniversalCRTVersion Condition="'$(TargetUniversalCRTVersion)' == ''">$(UCRTVersion)</TargetUniversalCRTVersion>
+  </PropertyGroup>
+</Project>
