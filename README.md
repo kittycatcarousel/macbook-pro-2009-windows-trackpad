@@ -3,7 +3,10 @@
 The original Apple trackpad driver delays dragging after two taps on Windows XP.
 This project changes the driver so that you can drag an item as soon as your finger moves the required distance after the second touch.
 
-The settings program lets you adjust tap times and the minimum finger movement for dragging.
+Some games miss the short button press from a tap.
+This project also lets you set how long a tap click stays pressed.
+
+The settings program lets you adjust tap times, click press time, and the minimum finger movement for dragging.
 Changes take effect when you click **Apply**.
 
 If you use the source code, start at **Compile**.
@@ -15,6 +18,7 @@ Before you install this software, make sure that the Apple trackpad driver opera
 | Path | Function |
 | --- | --- |
 | `src/driver/runtime.asm` | Adds the drag function and adjustable settings to the driver |
+| `src/driver/click.inc` | Controls tap-click press time and the release timer |
 | `src/settings/` | Reads and changes the driver settings |
 | `src/patcher/` | Makes a copy of the driver with the patch applied |
 | `tools/build-patch.c` | Combines the driver and extension, then creates the patch code |
@@ -91,15 +95,21 @@ Open **XP Trackpad Settings** on the desktop.
 | Maximum tap time | 250 ms |
 | Time before the second touch | 300 ms |
 | Minimum finger movement for dragging | 8 device counts |
+| Tap-click press time | 50 ms |
 
 **Maximum tap time** sets how long a touch can last and count as a tap.
 **Time before the second touch** sets the time allowed between the first finger lift and the second touch.
 **Minimum finger movement for dragging** sets how far your finger must move during the second touch.
 Movement is measured in trackpad device counts.
+**Tap-click press time** sets how long the mouse button stays pressed after a tap.
+Increase this value if a game misses tap clicks. Zero releases the button immediately.
+A second touch, finger movement, or a physical button change ends the tap press early.
+Windows timer scheduling can increase the press time.
 
 Click **Apply** to use the values immediately and save them.
 To use the default values, click **Default values**, then **Apply**.
 When you log on, the program applies the saved values and then closes.
+The program keeps the three saved values from the previous version and uses 50 ms for the new setting.
 
 To restore the original Apple driver, run `restore.cmd` as an administrator.
 Then restart Windows.

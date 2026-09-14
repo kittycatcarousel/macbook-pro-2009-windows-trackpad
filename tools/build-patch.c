@@ -11,7 +11,8 @@
 
 typedef struct { BYTE *data; size_t size; } Buffer;
 typedef struct { const char *name; DWORD address; } Symbol;
-typedef struct { DWORD offset,length; const char *name; } Hook;
+typedef struct { DWORD offset,length; const char *name; int call; } Hook;
+#define COUNT(a) (sizeof(a)/sizeof((a)[0]))
 static const BYTE source_hash[32]={
     0x34,0x1b,0x15,0x06,0x9f,0xc9,0x18,0x79,0xbd,0xdc,0xe5,0xd0,0x25,0x8d,0xea,0x08,
     0xee,0xdf,0xc1,0x85,0x5e,0x67,0xff,0x52,0xd7,0x70,0xc1,0x67,0x02,0xc8,0x97,0x81};
@@ -19,10 +20,21 @@ static const Symbol externs[]={
     {"wdf_globals",0x5fe0},{"wdf_input",0x5df4},{"wdf_output",0x5df8},
     {"old_dispatch",0x5fb},{"ioctl_done",0x664},{"tap_continue",0x2760},
     {"gap_continue",0x28e7},{"motion_continue",0x2afb},{"queue_packet",0x35ca},
-    {"init_continue",0x6469},{"reset_continue",0x2806}};
+    {"init_continue",0x6469},{"reset_continue",0x2806},{"init_failed",0x658a},
+    {"wdf_lock_create",0x5eac},{"wdf_lock_acquire",0x5eb0},{"wdf_lock_release",0x5eb4},
+    {"wdf_timer_create",0x5eb8},{"wdf_timer_start",0x5ebc},{"wdf_timer_stop",0x5ec0},
+    {"wdf_timer_parent",0x5ec4},{"wdf_context",0x5ce8},{"context_type",0x570c},
+    {"queue_continue",0x35cf},{"cleanup_continue",0x628b},
+    {"dequeue_packet",0x3564},{"read_continue",0xf2c},{"read_forward",0xfcd},
+    {"read_send",0x102f},{"usb_complete",0xe0c},
+    {"wdf_format",0x5dac},{"wdf_completion",0x5dd0},{"wdf_target",0x5a68},
+    {"wdf_irp",0x5e34},{"wdf_complete",0x5ddc}};
 static const Hook hooks[]={
     {0x5f3,8,"runtime_dispatch"},{0x2758,8,"runtime_tap"},{0x28e2,5,"runtime_gap"},
-    {0x294f,99,"runtime_motion"},{0x645f,10,"runtime_init"},{0x27f9,13,"runtime_reset"}};
+    {0x294f,99,"runtime_motion"},{0x645f,10,"runtime_init"},{0x27f9,13,"runtime_reset"},
+    {0x35ca,5,"runtime_queue"},{0x6286,5,"runtime_cleanup"},
+    {0x27e6,5,"runtime_click",1},{0x27b0,5,"runtime_click",1},
+    {0x2af2,9,"runtime_idle"},{0xf20,12,"runtime_read"}};
 
 static void require(int ok,const char *message)
 {
@@ -67,7 +79,7 @@ static Buffer link_driver(Buffer original,Buffer obj)
     IMAGE_SECTION_HEADER *section=NULL;IMAGE_SYMBOL *symbols;
     size_t strings,i,j,count=0,capacity,cursor,start,block,reloc_rva,reloc_size;
     DWORD pe=dword(original.data+60),opt=pe+24,old_rva=dword(original.data+opt+136);
-    DWORD old_size=dword(original.data+opt+140),*relocs,entry_points[6]={0},old_checksum,new_checksum;
+    DWORD old_size=dword(original.data+opt+140),*relocs,entry_points[COUNT(hooks)]={0},old_checksum,new_checksum;
     WORD section_number=0;Buffer image;BYTE *code;
     require(header->Machine==IMAGE_FILE_MACHINE_I386&&!header->SizeOfOptionalHeader,"Use an x86 COFF object.");
     require(header->PointerToSymbolTable<=obj.size&&
@@ -90,7 +102,7 @@ static Buffer link_driver(Buffer original,Buffer obj)
     for(i=0;i<header->NumberOfSymbols;i+=1+symbols[i].NumberOfAuxSymbols) {
         char name[9];const char *text=symbol_name(obj,&symbols[i],strings,name);
         if(symbols[i].SectionNumber!=section_number)continue;
-        for(j=0;j<6;j++)if(!strcmp(text,hooks[j].name))entry_points[j]=(DWORD)original.size+symbols[i].Value;
+        for(j=0;j<COUNT(hooks);j++)if(!strcmp(text,hooks[j].name))entry_points[j]=(DWORD)original.size+symbols[i].Value;
     }
     for(i=0;i<section->NumberOfRelocations;i++) {
         IMAGE_RELOCATION *r=(IMAGE_RELOCATION*)at(obj,section->PointerToRelocations+i*sizeof(*r),sizeof(*r));
@@ -108,14 +120,14 @@ static Buffer link_driver(Buffer original,Buffer obj)
             put32(site,0x10000+target+addend);relocs[count++]=(DWORD)original.size+r->VirtualAddress;
         }
     }
-    for(i=0;i<6;i++) {
+    for(i=0;i<COUNT(hooks);i++) {
         require(entry_points[i]!=0,"A runtime entry point is missing.");
-        image.data[hooks[i].offset]=0xe9;
+        image.data[hooks[i].offset]=hooks[i].call?0xe8:0xe9;
         put32(image.data+hooks[i].offset+1,entry_points[i]-hooks[i].offset-5);
         memset(image.data+hooks[i].offset+5,0x90,hooks[i].length-5);
     }
     memset(image.data+0x2753,0x90,5);memset(image.data+0x28dd,0x90,5);
-    image.data[0x28e7]=0x73;put32(image.data+0x5708,0x18f0);put32(image.data+0x6448,0x18f0);
+    image.data[0x28e7]=0x73;put32(image.data+0x5708,0x1910);put32(image.data+0x6448,0x1910);
     for(cursor=old_rva;cursor<old_rva+old_size;cursor+=block) {
         DWORD page=dword(original.data+cursor);block=dword(original.data+cursor+4);
         for(i=cursor+8;i<cursor+block;i+=2) {
@@ -123,7 +135,7 @@ static Buffer link_driver(Buffer original,Buffer obj)
             if(!(entry>>12))continue;
             if(target==0x2802||target==0x2955)put16(image.data+i,entry&4095);
             else {
-                for(j=0;j<6;j++)require(target<hooks[j].offset||target>=hooks[j].offset+hooks[j].length,
+                for(j=0;j<COUNT(hooks);j++)require(target<hooks[j].offset||target>=hooks[j].offset+hooks[j].length,
                     "A hook overlaps a base relocation.");
                 relocs[count++]=target;
             }

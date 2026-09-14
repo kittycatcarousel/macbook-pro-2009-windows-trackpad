@@ -6,8 +6,11 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <Import Project="..\common.props" />
   <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
-  <ItemDefinitionGroup><MASM><GenerateDebugInformation>false</GenerateDebugInformation><AdditionalOptions>/coff</AdditionalOptions></MASM></ItemDefinitionGroup>
-  <ItemGroup><MASM Include="runtime.asm" /></ItemGroup>
+  <ItemDefinitionGroup><MASM><GenerateDebugInformation>false</GenerateDebugInformation><AdditionalOptions>/coff</AdditionalOptions><IncludePaths>$(MSBuildProjectDirectory);%(IncludePaths)</IncludePaths></MASM></ItemDefinitionGroup>
+  <ItemGroup>
+    <MASM Include="runtime.asm"><AdditionalDependencies>$(MSBuildProjectDirectory)\click.inc;%(AdditionalDependencies)</AdditionalDependencies></MASM>
+    <None Include="click.inc" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
 </Project>

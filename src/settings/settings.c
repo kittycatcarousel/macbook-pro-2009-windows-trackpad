@@ -10,10 +10,10 @@
 #include <limits.h>
 #include "resource.h"
 #define COUNT(a) (sizeof(a)/sizeof((a)[0]))
-#define GET_TIMING 0xf2010
-#define SET_TIMING 0xf2014
+#define GET_TIMING 0xf2018
+#define SET_TIMING 0xf201c
 static const WCHAR profile_key[]=L"Software\\XPTrackpadSettings";
-typedef struct { unsigned tap,gap,motion; } Settings;
+typedef struct { unsigned tap,gap,motion,click; } Settings;
 typedef struct { DWORD version; Settings settings; } Config;
 static WCHAR message[1024];
 static BOOL errorf(const WCHAR *format,...)
@@ -33,7 +33,7 @@ static BOOL number(const WCHAR *text,unsigned *out)
         if(n>(UINT_MAX-digit)/10) return FALSE; n=n*10+digit; }
     *out=n; return TRUE;
 }
-static BOOL same(Settings a,Settings b) { return a.tap==b.tap&&a.gap==b.gap&&a.motion==b.motion; }
+static BOOL same(Settings a,Settings b) { return a.tap==b.tap&&a.gap==b.gap&&a.motion==b.motion&&a.click==b.click; }
 static HANDLE open_driver(void)
 {
     HANDLE d=CreateFileW(L"\\\\.\\AppleTrackpad",GENERIC_READ|GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE,NULL,OPEN_EXISTING,0,NULL);
@@ -44,13 +44,13 @@ static BOOL read_live(HANDLE device,Settings *s)
     DWORD bytes=0; Config c={0};
     if(!DeviceIoControl(device,GET_TIMING,NULL,0,&c,sizeof(c),&bytes,NULL))
         return winerror(L"The program cannot read the runtime settings.",GetLastError());
-    if(bytes!=sizeof(c)||c.version!=2) return errorf(L"Load the driver with runtime settings. Then restart Windows.");
+    if(bytes!=sizeof(c)||c.version!=3) return errorf(L"Install the driver supplied with this program. Then restart Windows.");
     *s=c.settings; return TRUE;
 }
 static BOOL write_live(HANDLE device,Settings s)
 {
     DWORD bytes=0; Config c; Settings readback;
-    c.version=2; c.settings=s;
+    c.version=3; c.settings=s;
     if(!DeviceIoControl(device,SET_TIMING,&c,sizeof(c),NULL,0,&bytes,NULL))
         return winerror(L"The program cannot apply the runtime settings.",GetLastError());
     if(!read_live(device,&readback)) return FALSE;
@@ -58,24 +58,29 @@ static BOOL write_live(HANDLE device,Settings s)
 }
 static BOOL saved(Settings *s,BOOL *exists)
 {
-    HKEY k; DWORD type=0,size=sizeof(Config); Config c={0}; LONG r; *exists=FALSE;
+    HKEY k; DWORD type=0,size=sizeof(Config); Config c={0}; LONG r; BOOL previous=FALSE; *exists=FALSE;
     r=RegOpenKeyExW(HKEY_CURRENT_USER,profile_key,0,KEY_QUERY_VALUE,&k);
     if(r==ERROR_FILE_NOT_FOUND) return TRUE;
     if(r!=ERROR_SUCCESS) return winerror(L"The program cannot open the saved settings.",r);
-    r=RegQueryValueExW(k,L"TimingV2",NULL,&type,(BYTE*)&c,&size);
+    r=RegQueryValueExW(k,L"TimingV3",NULL,&type,(BYTE*)&c,&size);
+    if(r==ERROR_FILE_NOT_FOUND) {
+        previous=TRUE; size=sizeof(c);
+        r=RegQueryValueExW(k,L"TimingV2",NULL,&type,(BYTE*)&c,&size);
+        c.settings.click=50;
+    }
     RegCloseKey(k);
     if(r==ERROR_FILE_NOT_FOUND) return TRUE;
     if(r!=ERROR_SUCCESS) return winerror(L"The program cannot read the saved settings.",r);
-    if(type!=REG_BINARY||size!=sizeof(c)||c.version!=2) return errorf(L"The saved settings have an incorrect format.");
+    if(type!=REG_BINARY||size!=(previous?16:sizeof(c))||c.version!=(previous?2u:3u)) return errorf(L"The saved settings have an incorrect format.");
     *s=c.settings; *exists=TRUE; return TRUE;
 }
 static BOOL save(Settings s)
 {
     HKEY k; Config c; LONG r;
-    c.version=2; c.settings=s;
+    c.version=3; c.settings=s;
     r=RegCreateKeyExW(HKEY_CURRENT_USER,profile_key,0,NULL,0,KEY_SET_VALUE,NULL,&k,NULL);
     if(r!=ERROR_SUCCESS) return winerror(L"The values are active. Opening the settings registry key failed.",r);
-    r=RegSetValueExW(k,L"TimingV2",0,REG_BINARY,(BYTE*)&c,sizeof(c));
+    r=RegSetValueExW(k,L"TimingV3",0,REG_BINARY,(BYTE*)&c,sizeof(c));
     RegCloseKey(k);
     return r==ERROR_SUCCESS || winerror(L"The values are active. Saving them failed.",r);
 }
@@ -96,6 +101,7 @@ static BOOL query(Settings *settings)
 static void fill(HWND dialog,Settings s)
 {
     SetDlgItemInt(dialog,IDC_TAP,s.tap,FALSE); SetDlgItemInt(dialog,IDC_GAP,s.gap,FALSE); SetDlgItemInt(dialog,IDC_MOTION,s.motion,FALSE);
+    SetDlgItemInt(dialog,IDC_CLICK,s.click,FALSE);
 }
 static BOOL field(HWND dialog,int id,unsigned *value,const WCHAR *label)
 {
@@ -108,11 +114,11 @@ static BOOL field(HWND dialog,int id,unsigned *value,const WCHAR *label)
 }
 static BOOL from_ui(HWND dialog,Settings *s)
 {
-    return field(dialog,IDC_TAP,&s->tap,L"Maximum tap time")&&field(dialog,IDC_GAP,&s->gap,L"Time before the second touch")&&field(dialog,IDC_MOTION,&s->motion,L"Minimum finger movement for dragging");
+    return field(dialog,IDC_TAP,&s->tap,L"Maximum tap time")&&field(dialog,IDC_GAP,&s->gap,L"Time before the second touch")&&field(dialog,IDC_MOTION,&s->motion,L"Minimum finger movement for dragging")&&field(dialog,IDC_CLICK,&s->click,L"Tap-click press time");
 }
 static INT_PTR CALLBACK dialog_proc(HWND dialog,UINT msg,WPARAM wp,LPARAM lp)
 {
-    Settings s={250,300,8}; BOOL ok; (void)lp;
+    Settings s={250,300,8,50}; BOOL ok; (void)lp;
     switch(msg) {
     case WM_INITDIALOG:
         ok=query(&s); fill(dialog,s);

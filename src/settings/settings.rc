@@ -1,6 +1,6 @@
 #include <windows.h>
 #include "resource.h"
-IDD_SETTINGS DIALOGEX 0, 0, 356, 250
+IDD_SETTINGS DIALOGEX 0, 0, 356, 298
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Trackpad Settings"
 FONT 8, "MS Shell Dlg"
@@ -19,8 +19,12 @@ BEGIN
     EDITTEXT IDC_MOTION, 202, 141, 84, 14, ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP
     LTEXT "counts", -1, 294, 144, 42, 10
     LTEXT "Zero removes the movement threshold. Small values can cause double-clicks. Movement uses trackpad device counts.", -1, 12, 161, 332, 25
-    LTEXT "", IDC_STATUS, 12, 191, 332, 28
-    PUSHBUTTON "Default values", IDC_RESTORE, 12, 224, 126, 16
-    DEFPUSHBUTTON "Apply", IDC_APPLY, 224, 224, 56, 16
-    PUSHBUTTON "Close", IDCANCEL, 288, 224, 56, 16
+    LTEXT "Tap-click press time", -1, 12, 192, 184, 10
+    EDITTEXT IDC_CLICK, 202, 189, 84, 14, ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT "ms", -1, 294, 192, 36, 10
+    LTEXT "Keeps a tap click pressed so games can detect it. Zero releases it immediately. Further input can end the press sooner.", -1, 12, 209, 332, 25
+    LTEXT "", IDC_STATUS, 12, 239, 332, 28
+    PUSHBUTTON "Default values", IDC_RESTORE, 12, 272, 126, 16
+    DEFPUSHBUTTON "Apply", IDC_APPLY, 224, 272, 56, 16
+    PUSHBUTTON "Close", IDCANCEL, 288, 272, 56, 16
 END

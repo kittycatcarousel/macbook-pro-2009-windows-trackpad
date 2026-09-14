@@ -7,15 +7,27 @@ extern wdf_globals:dword, wdf_input:dword, wdf_output:dword
 extern old_dispatch:near, ioctl_done:near, tap_continue:near
 extern gap_continue:near, motion_continue:near, queue_packet:near, init_continue:near
 extern reset_continue:near
+extern init_failed:near
 public runtime_dispatch, runtime_tap, runtime_gap, runtime_motion, runtime_init, runtime_reset
 .code
 runtime_init:
     mov dword ptr [esi+18b4h],500
-    mov dword ptr [esi+18d0h],2 ; Interface version.
+    mov dword ptr [esi+18d0h],3 ; Interface version.
     mov dword ptr [esi+18d4h],250
     mov dword ptr [esi+18d8h],300
     mov dword ptr [esi+18dch],8
+    mov dword ptr [esi+18f0h],50
+    pushad
+    push dword ptr [ebp-4]
+    call click_create
+    mov [esp+28],eax
+    popad
+    test eax,eax
+    js init_error
     jmp init_continue
+init_error:
+    add esp,12 ; Remove the original semaphore arguments.
+    jmp init_failed
 runtime_reset:
     and dword ptr [esi+18b8h],0
     and dword ptr [esi+18e0h],0
@@ -27,6 +39,9 @@ runtime_tap:
     mov edx,[esi+18d4h]
     jmp tap_continue
 runtime_gap:
+    pushad
+    call click_cancel
+    popad
     push edx
     mov edx,[esi+18d8h]
     cmp eax,edx
@@ -82,6 +97,10 @@ begin_drag:
     jmp motion_continue
 runtime_dispatch:
     mov eax,[ebp+18h]
+    cmp eax,0f2018h
+    je get_config
+    cmp eax,0f201ch
+    je set_config
     cmp eax,0f2010h
     je get_config
     cmp eax,0f2014h
@@ -93,12 +112,17 @@ runtime_dispatch:
     sub eax,0f2000h
     jmp old_dispatch
 get_config:
-    cmp dword ptr [ebp+10h],16
+    mov edi,16
+    cmp dword ptr [ebp+18h],0f2018h
+    jne get_size
+    mov edi,20
+get_size:
+    cmp [ebp+10h],edi
     jb invalid_config
     push 0
     lea eax,[ebp-4]
     push eax
-    push 16
+    push edi
     push dword ptr [ebp+0ch]
     push dword ptr [wdf_globals]
     call dword ptr [wdf_output]
@@ -106,8 +130,7 @@ get_config:
     test eax,eax
     js finish_config
     mov ecx,[ebp-4]
-    mov eax,[esi+18d0h]
-    mov [ecx],eax
+    mov dword ptr [ecx],2
     mov eax,[esi+18d4h]
     mov [ecx+4],eax
     mov eax,[esi+18d8h]
@@ -115,14 +138,25 @@ get_config:
     mov eax,[esi+18dch]
     mov [ecx+12],eax
     mov dword ptr [ebp-8],16
+    cmp dword ptr [ebp+18h],0f2018h
+    jne finish_config
+    mov dword ptr [ecx],3
+    mov eax,[esi+18f0h]
+    mov [ecx+16],eax
+    mov dword ptr [ebp-8],20
     jmp finish_config
 set_config:
-    cmp dword ptr [ebp+14h],16
+    mov edi,16
+    cmp dword ptr [ebp+18h],0f201ch
+    jne set_size
+    mov edi,20
+set_size:
+    cmp [ebp+14h],edi
     jne invalid_config
     push 0
     lea eax,[ebp-4]
     push eax
-    push 16
+    push edi
     push dword ptr [ebp+0ch]
     push dword ptr [wdf_globals]
     call dword ptr [wdf_input]
@@ -130,7 +164,12 @@ set_config:
     test eax,eax
     js finish_config
     mov ecx,[ebp-4]
-    cmp dword ptr [ecx],2
+    mov eax,2
+    cmp dword ptr [ebp+18h],0f201ch
+    jne set_version
+    inc eax
+set_version:
+    cmp [ecx],eax
     jne invalid_config
     ; Each setting uses an aligned DWORD and accepts the full unsigned 32-bit range.
     mov eax,[ecx+4]
@@ -139,6 +178,14 @@ set_config:
     mov [esi+18d8h],eax
     mov eax,[ecx+12]
     mov [esi+18dch],eax
+    cmp dword ptr [ebp+18h],0f201ch
+    jne set_done
+    mov eax,[ecx+16]
+    mov [esi+18f0h],eax
+    pushad
+    call click_cancel
+    popad
+set_done:
     xor edi,edi
     jmp finish_config
 old_config:
@@ -148,4 +195,5 @@ invalid_config:
     mov edi,0c000000dh
 finish_config:
     jmp ioctl_done
+include click.inc
 end

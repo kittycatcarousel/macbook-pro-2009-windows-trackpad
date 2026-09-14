@@ -5,3 +5,4 @@
 #define IDC_APPLY 104
 #define IDC_RESTORE 105
 #define IDC_STATUS 106
+#define IDC_CLICK 107

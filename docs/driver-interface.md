@@ -5,35 +5,40 @@ The settings program opens `\\.\AppleTrackpad` and sends these requests with `De
 
 | IOCTL | Operation | Buffer |
 | --- | --- | --- |
-| `0xF2010` | Read runtime settings | Output: at least 16 bytes; returns 16 bytes |
-| `0xF2014` | Write runtime settings | Input: exactly 16 bytes |
+| `0xF2018` | Read all four settings | Output: at least 20 bytes; returns 20 bytes |
+| `0xF201C` | Write all four settings | Input: exactly 20 bytes |
+| `0xF2010` | Read the three version 2 settings | Output: at least 16 bytes; returns 16 bytes |
+| `0xF2014` | Write the three version 2 settings | Input: exactly 16 bytes; keeps the click press time |
 
-The buffer contains four little-endian DWORDs:
+The version 3 buffer contains five little-endian DWORDs:
 
 ```c
-struct TimingV2 {
-    uint32_t version;       /* Set to 2. */
+struct TimingV3 {
+    uint32_t version;       /* Set to 3. */
     uint32_t tap_ms;
     uint32_t second_touch_ms;
     uint32_t movement_counts;
+    uint32_t click_press_ms;
 };
 ```
 
 Each setting accepts the full unsigned 32-bit range.
+Version 2 requests use the first four DWORDs, with the version field set to 2.
 Incorrect write sizes and versions return `STATUS_INVALID_PARAMETER`.
 Requests `0xF2008` and `0xF200C` return `STATUS_REVISION_MISMATCH`.
 Apple mode requests `0xF2000` and `0xF2004` stay available.
 
 Each setting uses an aligned DWORD store.
-Input processing can run between the three stores.
+Input processing can run between the four stores.
 An input packet can use a mixture of previous and new values during a settings change.
 The program reads the live values after a write, then saves them in:
 
 ```text
-HKCU\Software\XPTrackpadSettings\TimingV2
+HKCU\Software\XPTrackpadSettings\TimingV3
 ```
 
-This `REG_BINARY` value contains the same 16-byte buffer.
+This `REG_BINARY` value contains the same 20-byte buffer.
+If it is absent, the program reads `TimingV2` and uses 50 ms for the click press time.
 The `--apply-saved` command applies it in the background, then closes.
 If a save operation fails, the program reports that the settings are active and gives the registry error.
 
@@ -42,7 +47,7 @@ If a save operation fails, the program reports that the settings are active and 
 MSBuild assembles `runtime.asm` with its MASM build task.
 The C tool in `tools/build-patch.c` links its code at RVA `0x7480`.
 It resolves the COFF symbols and relocations against addresses in the specified Apple driver.
-It installs six hooks, extends the last PE section, rebuilds the relocation table, and calculates the PE checksum.
+It installs the hooks below, extends the last PE section, rebuilds the relocation table, and calculates the PE checksum.
 
 | File offset | Entry point |
 | --- | --- |
@@ -52,12 +57,37 @@ It installs six hooks, extends the last PE section, rebuilds the relocation tabl
 | `0x294F` | `runtime_motion` |
 | `0x645F` | `runtime_init` |
 | `0x27F9` | `runtime_reset` |
+| `0x35CA` | `runtime_queue` |
+| `0x6286` | `runtime_cleanup` |
+| `0x27E6` | `runtime_click` (left tap) |
+| `0x27B0` | `runtime_click` (right tap) |
+| `0x2AF2` | `runtime_idle` |
+| `0x0F20` | `runtime_read` |
 
-The patch increases the device context size from `0x18D0` to `0x18F0`.
-The interface version and settings use device context offsets `0x18D0` through `0x18DC`.
+The patch increases the device context size from `0x18D0` to `0x1910`.
+The interface version and the first three settings use device context offsets `0x18D0` through `0x18DC`.
 Signed 64-bit movement accumulators use device context offsets `0x18E0` and `0x18E8`.
 The driver enables dragging when absolute net movement on either axis is at or above the threshold.
-The timer comparisons use unsigned elapsed milliseconds.
+The tap and second-touch comparisons use unsigned elapsed milliseconds.
 
 The C build tool generates copy operations for the changed bytes.
 The XP patch program applies these operations to a copy of the specified original driver.
+
+## Tap-click press time
+
+The fourth setting is at `0x18F0`. A value of zero preserves immediate release.
+A tap queues a button press. A KMDF timer queues the release when the selected time expires.
+The timer uses the XP x86 interrupt-time clock and a 64-bit deadline in 100 ns units.
+While the press is active, USB input reads use the remaining press time as a timeout.
+A separate completion routine sends the queued release when this timeout expires.
+This supplies a HID report while the pad is idle. Other completion results use the Apple routine.
+Idle input reports use the input button state to prevent an extended press from becoming a physical button press.
+
+A second touch, pointer movement, a physical button change, or a new tap ends a pending tap press.
+Applying version 3 settings also ends a pending tap press.
+These actions preserve double-taps, pointer movement, physical clicks, and immediate drag release.
+
+The device owns the timer and a separate spin lock. The lock protects the pending press,
+deadline, and button state. A callback from an earlier tap checks the current deadline.
+Device cleanup waits for the timer to stop before the original cleanup code runs.
+The timer handle, lock, button state, finger count, and deadline use `0x18F4` through `0x190F`.
